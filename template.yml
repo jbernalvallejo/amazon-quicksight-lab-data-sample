@@ -1,5 +1,11 @@
-Resources:
+Mappings: 
+  RegionMap: 
+    us-west-1: 
+      "HVM64": "ami-06fcc1f0bc2c8943f"
+    us-west-2: 
+      "HVM64": "ami-0d6621c01e8c2de2c"
 
+Resources:
   QuicksightLabBucket:
     Type: AWS::S3::Bucket
     Properties:
@@ -55,7 +61,16 @@ Resources:
         Statement:
           - Effect: Allow
             Action: 'glue:*'
-            Resource: '*'
+            Resource:
+              Fn::Join:
+              - ""
+              - 
+                - "arn:aws:glue:"
+                - !Ref 'AWS::Region'
+                - ":"
+                - !Ref 'AWS::AccountId'
+                - ":crawler/"
+                - !Ref SportTicketsDatabaseCrawler
       Roles:
         - !Ref EC2toS3Role
 
@@ -90,7 +105,7 @@ Resources:
     Properties:
       IamInstanceProfile: !Ref EC2toS3PolicyInstanceProfile
       DisableApiTermination: false
-      ImageId: ami-0d6621c01e8c2de2c
+      ImageId: !FindInMap [RegionMap, !Ref "AWS::Region", HVM64]
       InstanceType: t3.2xlarge
       Monitoring: true
       UserData: !Base64
