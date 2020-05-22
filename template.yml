@@ -1,0 +1,91 @@
+Resources:
+
+  QuicksightLabBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "quicksight-lab-data-lake-${AWS::Region}-${AWS::AccountId}"
+      BucketEncryption: 
+        ServerSideEncryptionConfiguration: 
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: AES256
+    DeletionPolicy: Retain
+
+  AthenaResultsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "quicksight-lab-athena-results-${AWS::Region}-${AWS::AccountId}"
+      BucketEncryption: 
+        ServerSideEncryptionConfiguration: 
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: AES256
+    DeletionPolicy: Retain
+
+  EC2toS3Role:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "quicksight-lab-EC2toS3Role-${AWS::Region}-${AWS::AccountId}"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      Path: /
+
+  EC2toS3Policy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub "quicksight-lab-EC2toS3Policy${AWS::Region}-${AWS::AccountId}"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: 's3:*'
+            Resource: '*'
+      Roles:
+        - !Ref EC2toS3Role
+
+  EC2toS3PolicyInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref EC2toS3Role
+
+  DataLakeLoaderEC2:
+    Type: AWS::EC2::Instance
+    Properties:
+      IamInstanceProfile: !Ref EC2toS3PolicyInstanceProfile
+      DisableApiTermination: false
+      ImageId: ami-0d6621c01e8c2de2c
+      InstanceType: t3.2xlarge
+      Monitoring: true
+      UserData: !Base64
+        Fn::Sub:
+        - |
+          #!/bin/bash -ex
+          yum update -y
+          yum install -y git
+          cd /home/ec2-user
+          git clone https://github.com/jbernalvallejo/amazon-quicksight-lab-data-sample.git
+          cd amazon-quicksight-lab-data-sample/parquet/sampledb/v1
+          aws s3 cp . s3://${BucketName}/${GlueDatabase}/parquet --recursive
+        -
+          BucketName: !Ref QuicksightLabBucket
+          GlueDatabase: !Ref SportTicketsDatabase
+        
+  SportTicketsDatabase:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: ticketdata
+        Description: Database to hold tables for sport ticket data
+
+Outputs:
+  AthenaResultsBucket:
+    Description: S3 bucket to configure in Athena Settings to store query results
+    Value: !Sub
+      - s3://${BucketName}/
+      - { BucketName: !Ref AthenaResultsBucket }
