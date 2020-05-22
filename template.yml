@@ -18,7 +18,7 @@ Resources:
         ServerSideEncryptionConfiguration: 
         - ServerSideEncryptionByDefault:
             SSEAlgorithm: AES256
-    DeletionPolicy: Retain
+    # DeletionPolicy: Retain
 
   EC2toS3Role:
     Type: AWS::IAM::Role
@@ -33,18 +33,50 @@ Resources:
             Action: sts:AssumeRole
       Path: /
 
-  EC2toS3Policy:
+  EC2AthenaSettingsPolicy:
     Type: AWS::IAM::Policy
     Properties:
-      PolicyName: !Sub "quicksight-lab-EC2toS3Policy${AWS::Region}-${AWS::AccountId}"
+      PolicyName: !Sub "quicksight-lab-AthenaPolicy${AWS::Region}-${AWS::AccountId}"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: 'athena:*'
+            Resource: '*'
+      Roles:
+        - !Ref EC2toS3Role
+
+  EC2StartCrawlerPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub "quicksight-lab-GlueCrawlerPolicy-${AWS::Region}-${AWS::AccountId}"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: 'glue:*'
+            Resource: '*'
+      Roles:
+        - !Ref EC2toS3Role
+
+  DataLakeS3Policy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub "quicksight-lab-S3Policy-${AWS::Region}-${AWS::AccountId}"
       PolicyDocument:
         Version: 2012-10-17
         Statement:
           - Effect: Allow
             Action: 's3:*'
-            Resource: '*'
+            Resource: 
+              Fn::Join:
+              - ""
+              - 
+                - !GetAtt QuicksightLabBucket.Arn
+                - "/*"
       Roles:
         - !Ref EC2toS3Role
+        - !Ref SportTicketsDatabaseCrawlerRole
 
   EC2toS3PolicyInstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -71,9 +103,17 @@ Resources:
           git clone https://github.com/jbernalvallejo/amazon-quicksight-lab-data-sample.git
           cd amazon-quicksight-lab-data-sample/parquet/sampledb/v1
           aws s3 cp . s3://${BucketName}/${GlueDatabase}/parquet --recursive
+          export AWS_DEFAULT_REGION=${AWS::Region}
+          aws glue start-crawler --name ${CrawlerName}
+          aws athena update-work-group --work-group primary --configuration-updates ResultConfigurationUpdates={OutputLocation=${AthenaBucket}}
         -
           BucketName: !Ref QuicksightLabBucket
           GlueDatabase: !Ref SportTicketsDatabase
+          CrawlerName: !Ref SportTicketsDatabaseCrawler
+          AthenaBucket: !Sub
+            - s3://${AthenaBucketName}/
+            - { AthenaBucketName: !Ref AthenaResultsBucket } 
+    DependsOn: SportTicketsDatabaseCrawler
         
   SportTicketsDatabase:
     Type: AWS::Glue::Database
@@ -82,6 +122,36 @@ Resources:
       DatabaseInput:
         Name: ticketdata
         Description: Database to hold tables for sport ticket data
+
+  SportTicketsDatabaseCrawlerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "quicksight-lab-GlueCrawlerRole-${AWS::Region}-${AWS::AccountId}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: glue.amazonaws.com
+            Action: sts:AssumeRole
+      Path: "/"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
+
+  SportTicketsDatabaseCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: quicksight-lab-parquet-crawler    
+      DatabaseName: !Ref SportTicketsDatabase
+      TablePrefix: parquet_
+      Role: !GetAtt SportTicketsDatabaseCrawlerRole.Arn
+      Targets:
+        S3Targets:
+          - Path: !Ref QuicksightLabBucket
+      SchemaChangePolicy:
+        UpdateBehavior: "UPDATE_IN_DATABASE"
+        DeleteBehavior: "LOG"
+
 
 Outputs:
   AthenaResultsBucket:
