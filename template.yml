@@ -26,7 +26,7 @@ Resources:
         ServerSideEncryptionConfiguration: 
         - ServerSideEncryptionByDefault:
             SSEAlgorithm: AES256
-    # DeletionPolicy: Retain
+    DeletionPolicy: Retain
 
   EC2toS3Role:
     Type: AWS::IAM::Role
