@@ -122,7 +122,6 @@ Resources:
           aws s3 cp . s3://${BucketName}/${GlueDatabase}/parquet --recursive
           export AWS_DEFAULT_REGION=${AWS::Region}
           aws glue start-crawler --name ${CrawlerName}
-          aws athena update-work-group --work-group primary --configuration-updates ResultConfigurationUpdates={OutputLocation=${AthenaBucket}}
         -
           BucketName: !Ref QuicksightLabBucket
           GlueDatabase: !Ref SportTicketsDatabase
